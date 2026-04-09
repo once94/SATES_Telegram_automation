@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MeterReadingResult:
-    value: float | None
+    value: float | None        # sucet VT+NT alebo jednoduchy odcit
+    value_vt: float | None     # vysoky tarif (None ak nie je dual)
+    value_nt: float | None     # nizky tarif (None ak nie je dual)
     confidence: float
     meter_description: str
     raw_response: str
@@ -51,6 +53,7 @@ class AIVisionService:
         self,
         photo_bytes: bytes,
         meter_type: str | None = None,
+        dual_tariff: bool = False,
         reference_photo: bytes | None = None,
     ) -> MeterReadingResult:
         """Recognize meter value from a photo using Gemini Vision."""
@@ -68,39 +71,72 @@ class AIVisionService:
             type_sk = {"electricity": "elektromeru", "gas": "plynomeru", "water": "vodomeru"}
             meter_hint = f" Ide o fotku {type_sk.get(meter_type, 'meraca')}."
 
-        parts.append(types.Part.from_text(
-            f"Precitaj aktualnu hodnotu na meraci z fotky.{meter_hint}\n\n"
-            "Odpoved STRIKTNE v JSON formate (nic ine):\n"
-            '{"value": 12345.6, "confidence": 0.95, "meter_description": "kratky popis meraca"}\n\n'
-            "- value: ciselna hodnota na meraci (ak je viac cifernikov, pouzi hlavny)\n"
-            "- confidence: 0.0-1.0 ako si isty odcitanim\n"
-            "- meter_description: co vidis na fotke (typ meraca, znacka ak vidno)"
-        ))
+        if dual_tariff:
+            prompt = (
+                f"Precitaj hodnoty na elektromeri z fotky.{meter_hint}\n"
+                "Tento elektromer ma DVA tarify - VT (vysoky tarif) a NT (nizky tarif).\n"
+                "Mozu byt oznacene ako T1/T2, VT/NT, alebo 1/2.\n\n"
+                "Odpoved STRIKTNE v JSON formate (nic ine):\n"
+                '{"value_vt": 12345.6, "value_nt": 6789.0, "confidence": 0.95, '
+                '"meter_description": "kratky popis"}\n\n'
+                "- value_vt: hodnota vysokeho tarifu (denne hodiny)\n"
+                "- value_nt: hodnota nizkeho tarifu (nocne hodiny)\n"
+                "- confidence: 0.0-1.0 ako si isty odcitanim\n"
+                "- meter_description: co vidis na fotke"
+            )
+        else:
+            prompt = (
+                f"Precitaj aktualnu hodnotu na meraci z fotky.{meter_hint}\n\n"
+                "Odpoved STRIKTNE v JSON formate (nic ine):\n"
+                '{"value": 12345.6, "confidence": 0.95, "meter_description": "kratky popis"}\n\n'
+                "- value: ciselna hodnota na meraci (ak je viac cifernikov, pouzi hlavny)\n"
+                "- confidence: 0.0-1.0 ako si isty odcitanim\n"
+                "- meter_description: co vidis na fotke"
+            )
+
+        parts.append(types.Part.from_text(prompt))
 
         raw = ""
         try:
             response = await self.client.aio.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=types.Content(role="user", parts=parts),
-                config=types.GenerateContentConfig(max_output_tokens=300),
+                config=types.GenerateContentConfig(max_output_tokens=400),
             )
             raw = response.text or ""
             data = _extract_json(raw)
-            return MeterReadingResult(
-                value=float(data["value"]),
-                confidence=float(data.get("confidence", 0.5)),
-                meter_description=data.get("meter_description", ""),
-                raw_response=raw,
-            )
+
+            if dual_tariff:
+                vt = float(data["value_vt"])
+                nt = float(data["value_nt"])
+                return MeterReadingResult(
+                    value=vt + nt,
+                    value_vt=vt,
+                    value_nt=nt,
+                    confidence=float(data.get("confidence", 0.5)),
+                    meter_description=data.get("meter_description", ""),
+                    raw_response=raw,
+                )
+            else:
+                return MeterReadingResult(
+                    value=float(data["value"]),
+                    value_vt=None,
+                    value_nt=None,
+                    confidence=float(data.get("confidence", 0.5)),
+                    meter_description=data.get("meter_description", ""),
+                    raw_response=raw,
+                )
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.error("Failed to parse AI response: %s | raw: %s", e, raw)
             return MeterReadingResult(
-                value=None, confidence=0.0, meter_description="", raw_response=raw or str(e),
+                value=None, value_vt=None, value_nt=None,
+                confidence=0.0, meter_description="", raw_response=raw or str(e),
             )
         except Exception as e:
             logger.error("AI Vision API error: %s", e)
             return MeterReadingResult(
-                value=None, confidence=0.0, meter_description="", raw_response=str(e),
+                value=None, value_vt=None, value_nt=None,
+                confidence=0.0, meter_description="", raw_response=str(e),
             )
 
     async def identify_meter(

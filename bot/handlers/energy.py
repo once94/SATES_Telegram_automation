@@ -42,19 +42,33 @@ async def handle_energy_photo(message: Message, session: AsyncSession, db_user: 
     if result["status"] == "success":
         reading = result["reading"]
         meter = result["meter"]
-        diff_text = ""
-        if reading.difference is not None:
-            diff_text = (
-                f"\nPredchadzajuci: {format_number(reading.reading_value - reading.difference)} {meter.unit}"
-                f"\nRozdiel: <b>{format_number(reading.difference)} {meter.unit}</b>"
-            )
+
+        # Build response text
+        lines = [f"<b>Merac:</b> {meter.name}"]
+
+        if meter.dual_tariff and reading.reading_value_vt is not None:
+            lines.append(f"<b>VT:</b> {format_number(reading.reading_value_vt)} {meter.unit}")
+            lines.append(f"<b>NT:</b> {format_number(reading.reading_value_nt)} {meter.unit}")
+            lines.append(f"<b>Spolu:</b> {format_number(reading.reading_value)} {meter.unit}")
+            if reading.difference is not None:
+                lines.append("")
+                if reading.difference_vt is not None:
+                    lines.append(f"Rozdiel VT: <b>{format_number(reading.difference_vt)} {meter.unit}</b>")
+                if reading.difference_nt is not None:
+                    lines.append(f"Rozdiel NT: <b>{format_number(reading.difference_nt)} {meter.unit}</b>")
+                lines.append(f"Rozdiel spolu: <b>{format_number(reading.difference)} {meter.unit}</b>")
+        else:
+            lines.append(f"<b>Odcit:</b> {format_number(reading.reading_value)} {meter.unit}")
+            if reading.difference is not None:
+                prev = reading.reading_value - reading.difference
+                lines.append(f"Predchadzajuci: {format_number(prev)} {meter.unit}")
+                lines.append(f"Rozdiel: <b>{format_number(reading.difference)} {meter.unit}</b>")
+
+        lines.append(f"<b>Datum:</b> {format_date(reading.reading_date)}")
+        lines.append(f"<b>Istota AI:</b> {int((reading.confidence or 0) * 100)}%")
 
         await message.reply(
-            f"<b>Merac:</b> {meter.name}\n"
-            f"<b>Odcit:</b> {format_number(reading.reading_value)} {meter.unit}"
-            f"{diff_text}\n"
-            f"<b>Datum:</b> {format_date(reading.reading_date)}\n"
-            f"<b>Istota AI:</b> {int((reading.confidence or 0) * 100)}%",
+            "\n".join(lines),
             parse_mode="HTML",
             reply_markup=energy_reading_keyboard(reading.id),
         )
@@ -138,12 +152,24 @@ async def cmd_energy_history(message: Message, session: AsyncSession):
     lines = ["<b>Historia odcitov:</b>\n"]
     for meter in target_meters:
         readings = await energy_repo.get_readings_for_meter(session, meter.id, limit=5)
-        lines.append(f"\n<b>{meter.name}</b> ({meter.unit}):")
+        dual_label = " (VT+NT)" if meter.dual_tariff else ""
+        lines.append(f"\n<b>{meter.name}</b> ({meter.unit}{dual_label}):")
         if not readings:
             lines.append("  Zatial ziadne odcity")
         for r in readings:
-            diff = f" (rozdiel: {format_number(r.difference)})" if r.difference is not None else ""
-            lines.append(f"  {format_date(r.reading_date)}: {format_number(r.reading_value)}{diff}")
+            if meter.dual_tariff and r.reading_value_vt is not None:
+                vt_diff = f" ({format_number(r.difference_vt)})" if r.difference_vt is not None else ""
+                nt_diff = f" ({format_number(r.difference_nt)})" if r.difference_nt is not None else ""
+                total_diff = f" ({format_number(r.difference)})" if r.difference is not None else ""
+                lines.append(
+                    f"  {format_date(r.reading_date)}: "
+                    f"VT {format_number(r.reading_value_vt)}{vt_diff} + "
+                    f"NT {format_number(r.reading_value_nt)}{nt_diff} = "
+                    f"{format_number(r.reading_value)}{total_diff}"
+                )
+            else:
+                diff = f" (rozdiel: {format_number(r.difference)})" if r.difference is not None else ""
+                lines.append(f"  {format_date(r.reading_date)}: {format_number(r.reading_value)}{diff}")
 
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -161,8 +187,9 @@ async def cmd_energy_meters(message: Message, session: AsyncSession):
     lines = ["<b>Zaregistrovane merace:</b>\n"]
     type_sk = {"electricity": "Elektrina", "gas": "Plyn", "water": "Voda"}
     for m in meters:
+        dual = " | VT+NT" if m.dual_tariff else ""
         lines.append(
-            f" <b>{m.name}</b> | {type_sk.get(m.meter_type, m.meter_type)} | {m.unit}"
+            f" <b>{m.name}</b> | {type_sk.get(m.meter_type, m.meter_type)} | {m.unit}{dual}"
             + (f" | {m.location}" if m.location else "")
         )
     await message.answer("\n".join(lines), parse_mode="HTML")
@@ -174,12 +201,19 @@ async def cmd_new_meter(message: Message, session: AsyncSession, db_user: User):
         await message.answer("Tento prikaz je len pre adminov.")
         return
 
-    parts = message.text.split(maxsplit=2)
+    text = message.text or ""
+    dual = "--dual" in text
+    text = text.replace("--dual", "").strip()
+    parts = text.split(maxsplit=2)
+
     if len(parts) < 3:
         await message.answer(
-            "Pouzitie: /energia_novy_merac <typ> <nazov>\n"
+            "Pouzitie: /energia_novy_merac <typ> <nazov> [--dual]\n"
             "Typy: electricity, gas, water\n"
-            "Priklad: /energia_novy_merac electricity Elektromer hlavna budova"
+            "Pridaj --dual pre dvojtarifny elektromer (VT+NT)\n\n"
+            "Priklady:\n"
+            "  /energia_novy_merac electricity Elektromer budova --dual\n"
+            "  /energia_novy_merac gas Plynomer"
         )
         return
 
@@ -197,9 +231,11 @@ async def cmd_new_meter(message: Message, session: AsyncSession, db_user: User):
         return
 
     meter = await energy_repo.create_meter(
-        session, name=name, meter_type=meter_type, unit=units[meter_type]
+        session, name=name, meter_type=meter_type, unit=units[meter_type],
+        dual_tariff=dual,
     )
-    await message.answer(f"Merac '{meter.name}' ({meter.unit}) bol zaregistrovany.")
+    dual_text = " (dvojtarifny VT+NT)" if dual else ""
+    await message.answer(f"Merac '{meter.name}' ({meter.unit}{dual_text}) bol zaregistrovany.")
 
 
 @router.message(Command("energia_report"))
@@ -212,13 +248,23 @@ async def cmd_energy_report(message: Message, session: AsyncSession):
     lines = ["<b>Prehlad poslednych odcitov:</b>\n"]
     for meter in meters:
         last = await energy_repo.get_last_reading(session, meter.id)
-        if last:
+        if not last:
+            lines.append(f"<b>{meter.name}</b>: zatial ziadny odcit")
+            continue
+
+        if meter.dual_tariff and last.reading_value_vt is not None:
+            diff = f" | rozdiel: {format_number(last.difference)}" if last.difference else ""
+            lines.append(
+                f"<b>{meter.name}</b>: VT {format_number(last.reading_value_vt)} + "
+                f"NT {format_number(last.reading_value_nt)} = "
+                f"{format_number(last.reading_value)} {meter.unit}"
+                f" ({format_date(last.reading_date)}){diff}"
+            )
+        else:
             diff = f" | rozdiel: {format_number(last.difference)} {meter.unit}" if last.difference else ""
             lines.append(
                 f"<b>{meter.name}</b>: {format_number(last.reading_value)} {meter.unit}"
                 f" ({format_date(last.reading_date)}){diff}"
             )
-        else:
-            lines.append(f"<b>{meter.name}</b>: zatial ziadny odcit")
 
     await message.answer("\n".join(lines), parse_mode="HTML")
