@@ -1,3 +1,4 @@
+from pydantic import computed_field
 from pydantic_settings import BaseSettings
 
 
@@ -10,15 +11,22 @@ class Settings(BaseSettings):
     TOPIC_AUDITS: int = 0
     TOPIC_ENERGY: int = 0
 
-    # Claude AI
-    ANTHROPIC_API_KEY: str = ""
+    # Google Gemini AI
+    GOOGLE_API_KEY: str = ""
 
     # Database
     DB_PATH: str = "data/sates.db"
     DEBUG: bool = False
 
-    # Admin
-    ADMIN_TELEGRAM_IDS: list[int] = []
+    # Admin (comma-separated string from env, parsed into list)
+    ADMIN_TELEGRAM_IDS: str = ""
+
+    @computed_field
+    @property
+    def admin_ids(self) -> list[int]:
+        if not self.ADMIN_TELEGRAM_IDS:
+            return []
+        return [int(x.strip()) for x in self.ADMIN_TELEGRAM_IDS.split(",") if x.strip()]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
