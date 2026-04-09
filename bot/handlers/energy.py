@@ -170,7 +170,7 @@ async def cmd_energy_meters(message: Message, session: AsyncSession):
 
 @router.message(Command("energia_novy_merac"))
 async def cmd_new_meter(message: Message, session: AsyncSession, db_user: User):
-    if db_user.telegram_id not in settings.ADMIN_TELEGRAM_IDS:
+    if db_user.telegram_id not in settings.admin_ids:
         await message.answer("Tento prikaz je len pre adminov.")
         return
 

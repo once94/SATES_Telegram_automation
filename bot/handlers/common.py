@@ -70,7 +70,7 @@ async def cmd_me(message: Message, db_user: User):
 
 @router.message(Command("discover_topics"))
 async def cmd_discover_topics(message: Message, db_user: User):
-    if db_user.telegram_id not in settings.ADMIN_TELEGRAM_IDS:
+    if db_user.telegram_id not in settings.admin_ids:
         await message.answer("Tento prikaz je len pre adminov.")
         return
 
