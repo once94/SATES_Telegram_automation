@@ -1,0 +1,27 @@
+[project]
+name = "sates-telegram-bot"
+version = "0.1.0"
+description = "Telegram bot pre správu firemnej skupiny SATES"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.15.0,<4.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20.0",
+    "alembic>=1.14",
+    "apscheduler>=3.10,<4.0",
+    "pydantic-settings>=2.0",
+    "anthropic>=0.40.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bot*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
