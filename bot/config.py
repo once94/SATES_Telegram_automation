@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     TOPIC_AUDITS: int = 0
     TOPIC_ENERGY: int = 0
 
-    # Claude AI
-    ANTHROPIC_API_KEY: str = ""
+    # Google Gemini AI
+    GOOGLE_API_KEY: str = ""
 
     # Database
     DB_PATH: str = "data/sates.db"
