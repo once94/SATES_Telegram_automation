@@ -14,11 +14,12 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
 
     scheduler = AsyncIOScheduler(timezone="Europe/Bratislava")
 
-    # Task reminders - every 30 minutes
+    # Task reminders - once per day at 8:30
     scheduler.add_job(
         check_task_reminders,
-        "interval",
-        minutes=30,
+        "cron",
+        hour=8,
+        minute=30,
         kwargs={"bot": bot, "session_factory": session_factory},
         id="task_reminders",
         replace_existing=True,

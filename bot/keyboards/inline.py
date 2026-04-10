@@ -18,11 +18,6 @@ def energy_reading_keyboard(reading_id: int):
         text="Potvrdit",
         callback_data=EnergyReadingAction(action="confirm", reading_id=reading_id),
     )
-    builder.button(
-        text="Opravit",
-        callback_data=EnergyReadingAction(action="correct", reading_id=reading_id),
-    )
-    builder.adjust(2)
     return builder.as_markup()
 
 

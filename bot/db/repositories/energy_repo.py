@@ -36,6 +36,7 @@ async def create_meter(
     unit: str,
     location: str | None = None,
     description: str | None = None,
+    dual_tariff: bool = False,
 ) -> EnergyMeter:
     meter = EnergyMeter(
         name=name,
@@ -43,6 +44,7 @@ async def create_meter(
         unit=unit,
         location=location,
         description=description,
+        dual_tariff=dual_tariff,
     )
     session.add(meter)
     await session.flush()
@@ -55,7 +57,11 @@ async def create_reading(
     reading_value: float,
     reading_date: date,
     recorded_by_id: int,
+    reading_value_vt: float | None = None,
+    reading_value_nt: float | None = None,
     difference: float | None = None,
+    difference_vt: float | None = None,
+    difference_nt: float | None = None,
     photo_file_id: str | None = None,
     ai_raw_response: str | None = None,
     confidence: float | None = None,
@@ -64,9 +70,13 @@ async def create_reading(
     reading = EnergyReading(
         meter_id=meter_id,
         reading_value=reading_value,
+        reading_value_vt=reading_value_vt,
+        reading_value_nt=reading_value_nt,
         reading_date=reading_date,
         recorded_by_id=recorded_by_id,
         difference=difference,
+        difference_vt=difference_vt,
+        difference_nt=difference_nt,
         photo_file_id=photo_file_id,
         ai_raw_response=ai_raw_response,
         confidence=confidence,

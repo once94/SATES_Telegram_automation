@@ -11,10 +11,14 @@ class EnergyReading(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     meter_id: Mapped[int] = mapped_column(ForeignKey("energy_meters.id"))
-    reading_value: Mapped[float] = mapped_column(Float)
+    reading_value: Mapped[float] = mapped_column(Float)  # sucet VT+NT alebo jednoduchy odcit
+    reading_value_vt: Mapped[float | None] = mapped_column(Float, nullable=True)  # vysoky tarif
+    reading_value_nt: Mapped[float | None] = mapped_column(Float, nullable=True)  # nizky tarif
     reading_date: Mapped[date] = mapped_column(Date)
     recorded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    difference: Mapped[float | None] = mapped_column(Float, nullable=True)
+    difference: Mapped[float | None] = mapped_column(Float, nullable=True)  # rozdiel suctu
+    difference_vt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    difference_nt: Mapped[float | None] = mapped_column(Float, nullable=True)
     photo_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ai_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
