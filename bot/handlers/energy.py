@@ -11,12 +11,30 @@ from bot.config import settings
 from bot.db.models.user import User
 from bot.db.repositories import energy_repo
 from bot.filters.topic_filter import ForumTopicFilter
-from bot.keyboards.inline import EnergyReadingAction, energy_reading_keyboard
+from bot.keyboards.inline import (
+    EnergyMeterSelect,
+    EnergyReadingAction,
+    energy_meter_select_keyboard,
+    energy_reading_keyboard,
+)
 from bot.services.energy_service import process_meter_photo
 from bot.utils.formatting import format_number, format_date
 
 logger = logging.getLogger(__name__)
 router = Router(name="energy")
+
+
+def _format_reading_lines(reading, meter) -> str:
+    """Build the HTML summary text for a stored reading."""
+    lines = [f"<b>Merac:</b> {meter.name}"]
+    lines.append(f"<b>Odcit #{reading.id}:</b> {format_number(reading.reading_value)} {meter.unit}")
+    if reading.difference is not None:
+        prev = reading.reading_value - reading.difference
+        lines.append(f"Predchadzajuci: {format_number(prev)} {meter.unit}")
+        lines.append(f"Rozdiel: <b>{format_number(reading.difference)} {meter.unit}</b>")
+    lines.append(f"<b>Datum:</b> {format_date(reading.reading_date)}")
+    lines.append(f"<b>Istota AI:</b> {int((reading.confidence or 0) * 100)}%")
+    return "\n".join(lines)
 
 
 # --- Passive photo handler (only in energy topic) ---
@@ -26,8 +44,6 @@ router = Router(name="energy")
     ForumTopicFilter(thread_id=settings.TOPIC_ENERGY),
 )
 async def handle_energy_photo(message: Message, session: AsyncSession, db_user: User):
-    await message.reply("Spracuvam fotku meraca...")
-
     photo = message.photo[-1]  # largest size
     file = await message.bot.get_file(photo.file_id)
     photo_bytes = await message.bot.download_file(file.file_path)
@@ -39,23 +55,18 @@ async def handle_energy_photo(message: Message, session: AsyncSession, db_user: 
         recorded_by=db_user,
     )
 
-    if result["status"] == "success":
-        reading = result["reading"]
-        meter = result["meter"]
-
-        lines = [f"<b>Merac:</b> {meter.name}"]
-        lines.append(f"<b>Odcit #{reading.id}:</b> {format_number(reading.reading_value)} {meter.unit}")
-        if reading.difference is not None:
-            prev = reading.reading_value - reading.difference
-            lines.append(f"Predchadzajuci: {format_number(prev)} {meter.unit}")
-            lines.append(f"Rozdiel: <b>{format_number(reading.difference)} {meter.unit}</b>")
-        lines.append(f"<b>Datum:</b> {format_date(reading.reading_date)}")
-        lines.append(f"<b>Istota AI:</b> {int((reading.confidence or 0) * 100)}%")
-
+    if result["status"] == "needs_selection":
         await message.reply(
-            "\n".join(lines),
+            "Ktory merac je na fotke? Vyber zo zoznamu:",
+            reply_markup=energy_meter_select_keyboard(result["meters"]),
+        )
+        return
+
+    if result["status"] == "success":
+        await message.reply(
+            _format_reading_lines(result["reading"], result["meter"]),
             parse_mode="HTML",
-            reply_markup=energy_reading_keyboard(reading.id),
+            reply_markup=energy_reading_keyboard(result["reading"].id),
         )
     elif result["status"] == "low_confidence":
         await message.reply(
@@ -64,6 +75,51 @@ async def handle_energy_photo(message: Message, session: AsyncSession, db_user: 
         )
     else:
         await message.reply(
+            f"Chyba pri spracovani fotky: {result.get('error', 'neznama chyba')}"
+        )
+
+
+# --- Meter selection callback (when multiple meters exist) ---
+
+@router.callback_query(EnergyMeterSelect.filter())
+async def select_meter(
+    callback: CallbackQuery,
+    callback_data: EnergyMeterSelect,
+    session: AsyncSession,
+    db_user: User,
+):
+    orig = callback.message.reply_to_message
+    if not orig or not orig.photo:
+        await callback.answer("Povodna fotka sa uz nenasla. Posli ju znova.", show_alert=True)
+        await callback.message.edit_reply_markup(reply_markup=None)
+        return
+
+    await callback.answer("Spracuvam...")
+    photo = orig.photo[-1]
+    file = await callback.bot.get_file(photo.file_id)
+    photo_bytes = await callback.bot.download_file(file.file_path)
+
+    result = await process_meter_photo(
+        session=session,
+        photo_bytes=photo_bytes.read(),
+        photo_file_id=photo.file_id,
+        recorded_by=db_user,
+        meter_id=callback_data.meter_id,
+    )
+
+    if result["status"] == "success":
+        await callback.message.edit_text(
+            _format_reading_lines(result["reading"], result["meter"]),
+            parse_mode="HTML",
+            reply_markup=energy_reading_keyboard(result["reading"].id),
+        )
+    elif result["status"] == "low_confidence":
+        await callback.message.edit_text(
+            "Nepodarilo sa presne precitat hodnotu z fotky.\n"
+            "Prosim, skus poslat jasnejsiu fotku.",
+        )
+    else:
+        await callback.message.edit_text(
             f"Chyba pri spracovani fotky: {result.get('error', 'neznama chyba')}"
         )
 

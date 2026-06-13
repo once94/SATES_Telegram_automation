@@ -15,23 +15,19 @@ async def process_meter_photo(
     photo_bytes: bytes,
     photo_file_id: str,
     recorded_by: User,
+    meter_id: int | None = None,
 ) -> dict:
-    """Process a meter photo: identify meter, read value, store reading."""
-    meters = await energy_repo.get_all_meters(session)
+    """Process a meter photo: read value and store reading.
 
-    meter = None
-    if len(meters) == 1:
-        meter = meters[0]
-    elif len(meters) > 1:
-        meter_dicts = [
-            {"id": m.id, "name": m.name, "meter_type": m.meter_type, "location": m.location}
-            for m in meters
-        ]
-        meter_id = await ai_vision_service.identify_meter(photo_bytes, meter_dicts)
-        if meter_id:
-            meter = await energy_repo.get_meter_by_id(session, meter_id)
-
-    if not meter:
+    If meter_id is given, use that meter directly. Otherwise: 0 meters -> error,
+    1 meter -> auto, >1 meters -> ask the user to pick (needs_selection).
+    """
+    if meter_id is not None:
+        meter = await energy_repo.get_meter_by_id(session, meter_id)
+        if meter is None:
+            return {"status": "error", "error": "Merac nebol najdeny."}
+    else:
+        meters = await energy_repo.get_all_meters(session)
         if not meters:
             return {
                 "status": "error",
@@ -40,13 +36,7 @@ async def process_meter_photo(
         if len(meters) == 1:
             meter = meters[0]
         else:
-            return {
-                "status": "error",
-                "error": (
-                    "Nepodarilo sa identifikovat merac. "
-                    "Skus pridat referencnu fotku alebo pouzi manualne zadanie."
-                ),
-            }
+            return {"status": "needs_selection", "meters": meters}
 
     # Read the meter value (with dual_tariff flag)
     result = await ai_vision_service.read_meter(

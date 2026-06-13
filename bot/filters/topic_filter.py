@@ -15,8 +15,11 @@ class ForumTopicFilter(BaseFilter):
             self.thread_ids.add(thread_id)
         if thread_ids is not None:
             self.thread_ids.update(thread_ids)
+        # 0 znamena "nenakonfigurovany topic" -> ignorovat
+        self.thread_ids.discard(0)
 
     async def __call__(self, message: Message) -> bool:
-        if not self.thread_ids or 0 in self.thread_ids:
-            return True
+        # Bez nakonfigurovaneho topicu je handler neaktivny (predchadza konfliktom).
+        if not self.thread_ids:
+            return False
         return message.message_thread_id in self.thread_ids

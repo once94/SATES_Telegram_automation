@@ -7,6 +7,10 @@ class EnergyReadingAction(CallbackData, prefix="energy"):
     reading_id: int
 
 
+class EnergyMeterSelect(CallbackData, prefix="emeter"):
+    meter_id: int
+
+
 class TaskAction(CallbackData, prefix="task"):
     action: str  # "done", "cancel"
     task_id: int
@@ -18,6 +22,17 @@ def energy_reading_keyboard(reading_id: int):
         text="Potvrdit",
         callback_data=EnergyReadingAction(action="confirm", reading_id=reading_id),
     )
+    return builder.as_markup()
+
+
+def energy_meter_select_keyboard(meters):
+    builder = InlineKeyboardBuilder()
+    for m in meters:
+        builder.button(
+            text=m.name,
+            callback_data=EnergyMeterSelect(meter_id=m.id),
+        )
+    builder.adjust(1)
     return builder.as_markup()
 
 
