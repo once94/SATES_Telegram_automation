@@ -140,4 +140,5 @@ async def update_reading_value(
         reading.difference = (
             new_value - prev_reading.reading_value if prev_reading else None
         )
+        await session.flush()
     return reading

@@ -60,10 +60,10 @@ class AIVisionService:
         parts: list[types.Part] = []
 
         if reference_photo:
-            parts.append(types.Part.from_text("Referencna fotka meraca (pre porovnanie):"))
+            parts.append(types.Part.from_text(text="Referencna fotka meraca (pre porovnanie):"))
             parts.append(_make_image_part(reference_photo))
 
-        parts.append(types.Part.from_text("Aktualna fotka meraca na odcitanie:"))
+        parts.append(types.Part.from_text(text="Aktualna fotka meraca na odcitanie:"))
         parts.append(_make_image_part(photo_bytes))
 
         meter_hint = ""
@@ -94,7 +94,7 @@ class AIVisionService:
                 "- meter_description: co vidis na fotke"
             )
 
-        parts.append(types.Part.from_text(prompt))
+        parts.append(types.Part.from_text(text=prompt))
 
         raw = ""
         try:
@@ -151,7 +151,7 @@ class AIVisionService:
         parts = [
             _make_image_part(photo_bytes),
             types.Part.from_text(
-                "Mam tieto zaregistrovane merace:\n"
+                text="Mam tieto zaregistrovane merace:\n"
                 + "\n".join(
                     f"- ID {m['id']}: {m['name']} ({m['meter_type']}, {m.get('location', '?')})"
                     for m in known_meters
@@ -186,7 +186,7 @@ class AIVisionService:
         for caption, photo_bytes in photos:
             parts.append(_make_image_part(photo_bytes))
             if caption:
-                parts.append(types.Part.from_text(f"Popis k fotke: {caption}"))
+                parts.append(types.Part.from_text(text=f"Popis k fotke: {caption}"))
 
         entries_text = "\n\n".join(
             f"--- Zaznam #{e['id']} od {e['author']} ({e['date']}) ---\n{e.get('text', '(iba fotka)')}"
@@ -194,7 +194,7 @@ class AIVisionService:
         )
 
         parts.append(types.Part.from_text(
-            "Z nasledujucich zaznamov z kontrol a auditov za tento tyzden "
+            text="Z nasledujucich zaznamov z kontrol a auditov za tento tyzden "
             "vytvor strukturovany tyzdenny report v slovencine.\n\n"
             f"Zaznamy:\n{entries_text}\n\n"
             "Report ma obsahovat:\n"
